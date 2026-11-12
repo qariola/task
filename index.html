@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Tasks">
+<title>Task Organizer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=News+Cycle:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --aqua: #3cb8f5;
+    --aqua-dim: #1f6f99;
+    --aqua-faint: rgba(60, 184, 245, 0.12);
+    --bg: #000;
+    --panel: rgba(4, 14, 24, 0.82);
+    --danger: #ff6b6b;
+    --sidebar: 132px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, #9cc 50%, transparent 51%),
+      radial-gradient(1px 1px at 72% 9%, #bbb 50%, transparent 51%),
+      radial-gradient(1px 1px at 33% 64%, #8aa 50%, transparent 51%),
+      radial-gradient(1px 1px at 88% 41%, #ccc 50%, transparent 51%),
+      radial-gradient(1px 1px at 51% 83%, #9aa 50%, transparent 51%),
+      radial-gradient(1px 1px at 6% 92%, #aaa 50%, transparent 51%),
+      radial-gradient(1px 1px at 94% 76%, #9bb 50%, transparent 51%),
+      radial-gradient(1px 1px at 41% 31%, #777 50%, transparent 51%),
+      radial-gradient(1px 1px at 63% 55%, #888 50%, transparent 51%),
+      radial-gradient(1px 1px at 22% 47%, #666 50%, transparent 51%);
+    background-size: 240px 240px;
+    background-attachment: fixed;
+    color: var(--aqua);
+    font-family: "News Cycle", "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  textarea, input { font: inherit; color: var(--aqua); }
+
+  #app { display: flex; height: 100vh; height: 100dvh; }
+
+  /* ---------- Sidebar tabs ---------- */
+  #sidebar {
+    width: var(--sidebar); flex: 0 0 var(--sidebar);
+    border-right: 1px solid var(--aqua-dim);
+    padding: max(10px, env(safe-area-inset-top)) 0 10px 0;
+    overflow-y: auto; background: rgba(0,0,0,0.6);
+  }
+  .tab {
+    display: block; width: 100%; text-align: left;
+    padding: 12px 10px 12px 12px; margin: 2px 0;
+    border-left: 4px solid transparent;
+    text-transform: uppercase; font-size: 14px; line-height: 1.2;
+    word-break: break-word; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .tab:hover { background: var(--aqua-faint); }
+  .tab.active { border-left-color: var(--aqua); background: var(--aqua-faint); }
+  .tab.drop-target { outline: 1px dashed var(--aqua); background: rgba(60,184,245,0.25); }
+  .tab .count { opacity: 0.55; font-size: 11px; margin-left: 4px; }
+  .tab.add { opacity: 0.7; font-size: 13px; }
+  .tab.focus-tab { letter-spacing: 0.12em; }
+
+  /* ---------- Main page ---------- */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: max(10px, env(safe-area-inset-top)) 12px 10px 12px;
+    border-bottom: 1px solid var(--aqua-dim);
+    background: rgba(0,0,0,0.6);
+  }
+  .btn {
+    border: 1px solid var(--aqua); border-radius: 4px;
+    padding: 6px 12px; text-transform: uppercase; font-size: 13px;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--aqua-faint); }
+  .btn.primary { background: var(--aqua); color: #000; }
+  .btn.small { padding: 3px 8px; font-size: 11px; }
+  #pageTitle {
+    flex: 1; text-align: center; text-transform: uppercase;
+    font-size: 18px; letter-spacing: 0.15em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #syncBadge {
+    font-size: 11px; text-transform: uppercase; padding: 4px 8px;
+    border: 1px solid var(--aqua-dim); border-radius: 10px; white-space: nowrap;
+  }
+  #syncBadge.ok { border-color: var(--aqua); }
+  #syncBadge.warn { color: #f5c542; border-color: #f5c542; }
+  #syncBadge.err { color: var(--danger); border-color: var(--danger); }
+
+  #page { flex: 1; overflow-y: auto; padding: 14px 14px 80px 14px; }
+  .empty { opacity: 0.55; text-align: center; margin-top: 60px; text-transform: uppercase; font-size: 14px; line-height: 1.8; }
+
+  /* ---------- Task box ---------- */
+  .task {
+    background: var(--panel); border: 1px solid var(--aqua-dim); border-radius: 6px;
+    padding: 8px 10px 8px 6px; margin-bottom: 12px; max-width: 760px;
+  }
+  .task.dragging { position: fixed; z-index: 1000; pointer-events: none; opacity: 0.9;
+    box-shadow: 0 0 18px rgba(60,184,245,0.5); }
+  .placeholder { border: 1px dashed var(--aqua); border-radius: 6px; margin-bottom: 12px; max-width: 760px; }
+  .task-head { display: flex; align-items: flex-start; gap: 6px; }
+  .handle {
+    flex: 0 0 22px; text-align: center; cursor: grab; touch-action: none;
+    opacity: 0.6; font-size: 18px; line-height: 1; padding-top: 4px; user-select: none;
+  }
+  .handle:active { cursor: grabbing; }
+  .check {
+    flex: 0 0 22px; width: 22px; height: 22px; margin-top: 2px; padding: 0;
+    border: 1.5px solid var(--aqua); border-radius: 4px; font-size: 15px; line-height: 19px; text-align: center;
+  }
+  .check.on { background: var(--aqua); color: #000; }
+  .step .check { flex-basis: 18px; width: 18px; height: 18px; font-size: 12px; line-height: 15px; margin-top: 0; }
+  .task.done textarea.task-text, .step.done input.step-text { text-decoration: line-through; opacity: 0.45; }
+  .task.done { border-style: dashed; }
+  .task-body { flex: 1; min-width: 0; }
+  .meta { display: flex; align-items: center; gap: 8px; font-size: 11px; opacity: 0.75;
+    text-transform: uppercase; margin-bottom: 4px; flex-wrap: wrap; }
+  .meta .origin { border: 1px solid var(--aqua-dim); border-radius: 3px; padding: 0 5px; }
+  .meta .spacer { flex: 1; }
+  .meta > * { white-space: nowrap; }
+  textarea.task-text, input.step-text {
+    width: 100%; background: transparent; border: 1px solid transparent; border-radius: 4px;
+    resize: none; outline: none; padding: 4px 6px; line-height: 1.35; font-size: 16px; font-weight: 700;
+  }
+  textarea.task-text { min-height: 34px; overflow: hidden; }
+  textarea.task-text:focus, input.step-text:focus { border-color: var(--aqua-dim); background: rgba(60,184,245,0.05); }
+  textarea::placeholder, input::placeholder { color: var(--aqua-dim); }
+  .counter { font-size: 10px; opacity: 0.5; text-align: right; height: 12px; }
+  .icon-btn { font-size: 14px; padding: 2px 6px; border-radius: 3px; opacity: 0.85; }
+  .icon-btn:hover { background: var(--aqua-faint); opacity: 1; }
+  .icon-btn.del:hover { color: var(--danger); }
+
+  .steps { margin: 4px 0 0 28px; padding-left: 12px; border-left: 1px solid var(--aqua-dim); }
+  .step { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
+  .step input.step-text { font-size: 15px; padding: 3px 6px; }
+  .add-step {
+    margin: 4px 0 0 28px; width: 26px; height: 26px; border: 1px solid var(--aqua);
+    border-radius: 3px; font-size: 18px; line-height: 22px; text-align: center; padding: 0;
+  }
+  .add-step:hover { background: var(--aqua-faint); }
+  .collapsed-note { margin: 4px 0 0 40px; font-size: 12px; opacity: 0.6; text-transform: uppercase; }
+
+  /* ---------- Context menu & dialogs ---------- */
+  #ctxMenu {
+    position: fixed; z-index: 2000; display: none; min-width: 140px;
+    background: #02101a; border: 1px solid var(--aqua); border-radius: 4px; padding: 4px 0;
+  }
+  #ctxMenu button { display: block; width: 100%; text-align: left; padding: 9px 14px; text-transform: uppercase; font-size: 13px; }
+  #ctxMenu button:hover { background: var(--aqua-faint); }
+  #ctxMenu button.danger { color: var(--danger); }
+
+  dialog {
+    background: #02101a; color: var(--aqua); border: 1px solid var(--aqua); border-radius: 6px;
+    padding: 18px; width: min(92vw, 460px); font-family: inherit; font-weight: 700;
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.7); }
+  dialog h3 { margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 0.1em; font-size: 16px; }
+  dialog p { font-size: 13px; line-height: 1.5; opacity: 0.85; margin: 6px 0; }
+  dialog input[type=text] {
+    width: 100%; background: transparent; border: 1px solid var(--aqua-dim); border-radius: 4px;
+    padding: 8px; font-size: 15px; outline: none; margin: 6px 0 12px;
+  }
+  dialog input[type=text]:focus { border-color: var(--aqua); }
+  .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: #02101a; border: 1px solid var(--aqua); border-radius: 4px; padding: 8px 14px;
+    font-size: 13px; text-transform: uppercase; display: none; z-index: 3000; max-width: 90vw; text-align: center;
+  }
+
+  @media (max-width: 600px) {
+    :root { --sidebar: 96px; }
+    .tab { font-size: 12px; padding: 12px 6px 12px 8px; }
+    #pageTitle { font-size: 14px; letter-spacing: 0.08em; }
+    #page { padding: 10px 8px 80px 8px; }
+    .steps { margin-left: 18px; }
+    .add-step { margin-left: 18px; }
+    .btn { padding: 6px 9px; }
+    .meta { flex-wrap: nowrap; gap: 4px; }
+    #topbar { flex-wrap: wrap; row-gap: 8px; }
+    #pageTitle { order: 1; flex: 1; }
+    #addTaskBtn { order: 0; }
+    #syncBadge { order: 2; }
+    #settingsBtn { order: 3; }
+    #barBreak { order: 4; flex-basis: 100%; height: 0; }
+    #barBreak:not(.show) { display: none; }
+    #cleanupBtn { order: 5; }
+    #collapseAllBtn { order: 6; margin-left: auto; }
+    .meta .lbl { display: none; }
+    .meta .icon-btn { font-size: 16px; padding: 2px 7px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar" aria-label="Tabs"></nav>
+  <section id="main">
+    <header id="topbar">
+      <button class="btn primary" id="addTaskBtn" title="Add a task">+ Task</button>
+      <div id="pageTitle"></div>
+      <div id="barBreak"></div>
+      <button class="btn small" id="cleanupBtn" title="Delete all checked tasks on this page">Clean up</button>
+      <button class="btn small" id="collapseAllBtn" title="Collapse / expand all steps on this page">Collapse</button>
+      <button id="syncBadge" title="Google Drive sync">Local</button>
+      <button class="icon-btn" id="settingsBtn" title="Settings" style="font-size:18px">⚙</button>
+    </header>
+    <div id="page"></div>
+  </section>
+</div>
+
+<div id="ctxMenu">
+  <button data-act="rename">Rename</button>
+  <button data-act="delete" class="danger">Delete</button>
+</div>
+
+<dialog id="nameDlg">
+  <h3 id="nameDlgTitle">Tab name</h3>
+  <input type="text" id="nameDlgInput" maxlength="30" autocomplete="off">
+  <div class="dlg-actions">
+    <button class="btn" id="nameDlgCancel">Cancel</button>
+    <button class="btn primary" id="nameDlgOk">Save</button>
+  </div>
+</dialog>
+
+<dialog id="confirmDlg">
+  <h3 id="confirmTitle">Confirm</h3>
+  <p id="confirmMsg"></p>
+  <div class="dlg-actions" id="confirmActions"></div>
+</dialog>
+
+<dialog id="settingsDlg">
+  <h3>Google Drive sync</h3>
+  <p>Paste the OAuth Client ID from your Google Cloud project. Your tasks are saved to <b>TaskOrganizer.json</b> in your own Drive. The app can only see files it created.</p>
+  <input type="text" id="clientIdInput" placeholder="xxxxxxxx.apps.googleusercontent.com" autocomplete="off">
+  <p id="driveStatusText"></p>
+  <div class="dlg-actions">
+    <button class="btn" id="disconnectBtn">Disconnect</button>
+    <button class="btn" id="exportBtn">Export backup</button>
+    <button class="btn" id="settingsClose">Close</button>
+    <button class="btn primary" id="connectBtn">Connect Drive</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ======================= Constants =======================
+  const FOCUS_ID = 'focus';
+  const TASK_MAX = 200;
+  const STEP_MAX = 100;
+  const DRIVE_FILE_NAME = 'TaskOrganizer.json';
+  const LS = { data: 'sto.data', clientId: 'sto.clientId', drive: 'sto.drive', current: 'sto.current' };
+  const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+  // ======================= Helpers =======================
+  const $ = (s, el = document) => el.querySelector(s);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const lsGet = (k, d = null) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  const lsDel = (k) => { try { localStorage.removeItem(k); } catch {} };
+  function el(tag, attrs = {}, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (v !== undefined && v !== null) n.setAttribute(k, v);
+    }
+    for (const kid of kids) if (kid != null) n.append(kid);
+    return n;
+  }
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleDateString(undefined, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  let toastTimer;
+  function toast(msg, ms = 2600) {
+    const t = $('#toast'); t.textContent = msg; t.style.display = 'block';
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = 'none', ms);
+  }
+
+  // ======================= Data =======================
+  function defaultData() {
+    return {
+      schema: 1,
+      updated: new Date().toISOString(),
+      tabs: [
+        { id: FOCUS_ID, name: 'Focus', fixed: true },
+        { id: uid(), name: 'Tab 2' },
+        { id: uid(), name: 'Tab 3' },
+      ],
+      tasks: {},
+    };
+  }
+  function normalize(d) {
+    if (!d || !Array.isArray(d.tabs)) return defaultData();
+    if (!d.tabs.find(t => t.id === FOCUS_ID)) d.tabs.unshift({ id: FOCUS_ID, name: 'Focus', fixed: true });
+    d.tasks = d.tasks || {};
+    for (const t of d.tabs) d.tasks[t.id] = d.tasks[t.id] || [];
+    return d;
+  }
+
+  let data = normalize(lsGet(LS.data) || defaultData());
+  let current = lsGet(LS.current, FOCUS_ID);
+  if (!data.tabs.find(t => t.id === current)) current = FOCUS_ID;
+  let dirty = lsGet('sto.dirty', false);
+
+  function commit({ rerender = true, sync = true } = {}) {
+    data.updated = new Date().toISOString();
+    lsSet(LS.data, data);
+    if (sync) { dirty = true; lsSet('sto.dirty', true); Drive.scheduleSave(); }
+    if (rerender) render();
+  }
+  const tabById = (id) => data.tabs.find(t => t.id === id);
+  const tasksOf = (id) => (data.tasks[id] = data.tasks[id] || []);
+  function findTask(taskId) {
+    for (const tabId of Object.keys(data.tasks)) {
+      const i = data.tasks[tabId].findIndex(t => t.id === taskId);
+      if (i >= 0) return { tabId, index: i, task: data.tasks[tabId][i] };
+    }
+    return null;
+  }
+
+  // ======================= Rendering =======================
+  function render() {
+    renderSidebar();
+    renderPage();
+    lsSet(LS.current, current);
+  }
+
+  function renderSidebar() {
+    const sb = $('#sidebar'); sb.innerHTML = '';
+    for (const tab of data.tabs) {
+      const n = tasksOf(tab.id).length;
+      const b = el('button', {
+        class: 'tab' + (tab.id === current ? ' active' : '') + (tab.fixed ? ' focus-tab' : ''),
+        'data-tab': tab.id,
+        onclick: () => { current = tab.id; render(); },
+      }, tab.name, n ? el('span', { class: 'count' }, String(n)) : null);
+      if (!tab.fixed) attachContextMenu(b, tab.id);
+      sb.append(b);
+    }
+    sb.append(el('button', { class: 'tab add', onclick: addTab }, '+ Add tab'));
+  }
+
+  function renderPage() {
+    const tab = tabById(current);
+    $('#pageTitle').textContent = tab.name;
+    const page = $('#page'); page.innerHTML = '';
+    const list = tasksOf(current);
+    const anyOpen = list.some(t => t.steps.length && !t.collapsed);
+    $('#collapseAllBtn').textContent = anyOpen ? 'Collapse' : 'Expand';
+    $('#collapseAllBtn').style.display = list.some(t => t.steps.length) ? '' : 'none';
+    const doneCount = list.filter(t => t.done).length;
+    $('#cleanupBtn').style.display = doneCount ? '' : 'none';
+    $('#cleanupBtn').textContent = `Clean up (${doneCount})`;
+    $('#barBreak').classList.toggle('show', !!doneCount || list.some(t => t.steps.length));
+    if (!list.length) {
+      page.append(el('div', { class: 'empty' },
+        current === FOCUS_ID
+          ? 'Focus list is empty.\nUse ➜ Focus on any task to bring it here.'
+          : 'No tasks yet.\nTap + Task to add one.'));
+      $('.empty').style.whiteSpace = 'pre-line';
+      return;
+    }
+    for (const task of list) page.append(renderTask(task));
+    page.querySelectorAll('textarea.task-text').forEach(autoGrow);
+  }
+
+  function renderTask(task) {
+    const inFocus = current === FOCUS_ID;
+    const card = el('div', { class: 'task' + (task.done ? ' done' : ''), 'data-id': task.id });
+
+    const counter = el('div', { class: 'counter' }, `${task.text.length}/${TASK_MAX}`);
+    const ta = el('textarea', { class: 'task-text', maxlength: TASK_MAX, rows: 1, placeholder: 'Task, note or journal entry…' });
+    ta.value = task.text;
+    ta.addEventListener('input', () => {
+      task.text = ta.value.slice(0, TASK_MAX);
+      counter.textContent = `${task.text.length}/${TASK_MAX}`;
+      autoGrow(ta); commit({ rerender: false });
+    });
+
+    const origin = inFocus && task.origin ? tabById(task.origin) : null;
+    const meta = el('div', { class: 'meta' },
+      el('span', {}, fmtDate(task.created)),
+      origin ? el('span', { class: 'origin', title: 'Came from this tab' }, 'from ' + origin.name) : null,
+      el('span', { class: 'spacer' }),
+      task.steps.length ? el('button', {
+        class: 'icon-btn', title: task.collapsed ? 'Show steps' : 'Hide steps',
+        onclick: () => { task.collapsed = !task.collapsed; commit(); },
+      }, (task.collapsed ? '▸ ' : '▾ ') + task.steps.length, el('span', { class: 'lbl' }, task.steps.length === 1 ? ' step' : ' steps')) : null,
+      inFocus
+        ? (origin ? el('button', { class: 'icon-btn', title: 'Send back to ' + origin.name, onclick: () => moveTask(task.id, task.origin) }, '↩', el('span', { class: 'lbl' }, ' Back')) : null)
+        : el('button', { class: 'icon-btn', title: 'Send task and its steps to Focus', onclick: () => moveTask(task.id, FOCUS_ID) }, '➜', el('span', { class: 'lbl' }, ' Focus')),
+      el('button', { class: 'icon-btn del', title: 'Delete task', onclick: () => deleteTask(task.id) }, '✕'),
+    );
+
+    const handle = el('div', { class: 'handle', title: 'Drag to move (drop on a tab to move it there)' }, '⠿');
+    attachDrag(handle, card, task.id);
+
+    const check = el('button', {
+      class: 'check' + (task.done ? ' on' : ''), title: task.done ? 'Mark not done' : 'Mark done',
+      'aria-pressed': String(!!task.done),
+      onclick: () => { task.done = !task.done; commit(); },
+    }, task.done ? '✓' : '');
+    card.append(el('div', { class: 'task-head' }, handle, check, el('div', { class: 'task-body' }, meta, ta, counter)));
+
+    if (task.steps.length && !task.collapsed) {
+      const steps = el('div', { class: 'steps' });
+      for (const step of task.steps) {
+        const inp = el('input', { class: 'step-text', type: 'text', maxlength: STEP_MAX, placeholder: 'Step…' });
+        inp.value = step.text;
+        inp.addEventListener('input', () => { step.text = inp.value.slice(0, STEP_MAX); commit({ rerender: false }); });
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(task.id); } });
+        const sc = el('button', {
+          class: 'check' + (step.done ? ' on' : ''), title: step.done ? 'Mark not done' : 'Mark done',
+          onclick: () => { step.done = !step.done; commit(); },
+        }, step.done ? '✓' : '');
+        steps.append(el('div', { class: 'step' + (step.done ? ' done' : '') }, sc, inp,
+          el('button', { class: 'icon-btn del', title: 'Delete step', onclick: () => {
+            task.steps = task.steps.filter(s => s.id !== step.id); commit();
+          } }, '✕')));
+      }
+      card.append(steps);
+    }
+    if (!task.collapsed) {
+      card.append(el('button', { class: 'add-step', title: 'Add a step', onclick: () => addStep(task.id) }, '+'));
+    }
+    return card;
+  }
+
+  function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; }
+
+  // ======================= Actions =======================
+  function addTask() {
+    const task = { id: uid(), text: '', created: new Date().toISOString(), steps: [], collapsed: false };
+    tasksOf(current).unshift(task);
+    commit();
+    const ta = $(`.task[data-id="${task.id}"] textarea`); if (ta) ta.focus();
+  }
+  function addStep(taskId) {
+    const f = findTask(taskId); if (!f) return;
+    const step = { id: uid(), text: '' };
+    f.task.steps.push(step); f.task.collapsed = false;
+    commit();
+    const inputs = document.querySelectorAll(`.task[data-id="${taskId}"] input.step-text`);
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+  async function deleteTask(taskId) {
+    const f = findTask(taskId); if (!f) return;
+    if ((f.task.text.trim() || f.task.steps.length) &&
+        !(await confirmBox('Delete task', 'Delete this task and its steps?', 'Delete'))) return;
+    data.tasks[f.tabId].splice(f.index, 1); commit();
+  }
+  function moveTask(taskId, toTab, toIndex = 0) {
+    const f = findTask(taskId); if (!f || !tabById(toTab)) return;
+    const [task] = data.tasks[f.tabId].splice(f.index, 1);
+    if (toTab === FOCUS_ID && f.tabId !== FOCUS_ID) task.origin = f.tabId;
+    if (toTab !== FOCUS_ID) delete task.origin;
+    tasksOf(toTab).splice(toIndex, 0, task);
+    commit();
+    if (f.tabId !== toTab) toast('Moved to ' + tabById(toTab).name);
+  }
+  function reorderTask(taskId, newIndex) {
+    const list = tasksOf(current);
+    const i = list.findIndex(t => t.id === taskId); if (i < 0) return;
+    const [t] = list.splice(i, 1); list.splice(newIndex, 0, t); commit();
+  }
+  async function addTab() {
+    const name = await nameBox('New tab', '');
+    if (!name) return;
+    const tab = { id: uid(), name };
+    data.tabs.push(tab); data.tasks[tab.id] = []; current = tab.id; commit();
+  }
+  async function renameTab(id) {
+    const tab = tabById(id); if (!tab || tab.fixed) return;
+    const name = await nameBox('Rename tab', tab.name);
+    if (name) { tab.name = name; commit(); }
+  }
+  async function deleteTab(id) {
+    const tab = tabById(id); if (!tab || tab.fixed) return;
+    const n = tasksOf(id).length;
+    const ok = await confirmBox('Delete tab', `Delete "${tab.name}"${n ? ` and its ${n} task${n > 1 ? 's' : ''}` : ''}? Tasks already in Focus are kept.`, 'Delete');
+    if (!ok) return;
+    data.tabs = data.tabs.filter(t => t.id !== id);
+    delete data.tasks[id];
+    for (const t of tasksOf(FOCUS_ID)) if (t.origin === id) delete t.origin;
+    if (current === id) current = FOCUS_ID;
+    commit();
+  }
+  async function cleanUp() {
+    const list = tasksOf(current);
+    const n = list.filter(t => t.done).length; if (!n) return;
+    if (!(await confirmBox('Clean up', `Delete ${n} checked task${n > 1 ? 's' : ''} and their steps from this page?`, 'Delete'))) return;
+    data.tasks[current] = list.filter(t => !t.done); commit();
+  }
+  function toggleCollapseAll() {
+    const list = tasksOf(current);
+    const anyOpen = list.some(t => t.steps.length && !t.collapsed);
+    for (const t of list) if (t.steps.length) t.collapsed = anyOpen;
+    commit();
+  }
+
+  // ======================= Context menu (right-click / long-press) =======================
+  let ctxTab = null;
+  function attachContextMenu(node, tabId) {
+    node.addEventListener('contextmenu', (e) => { e.preventDefault(); openCtx(e.clientX, e.clientY, tabId); });
+    let timer = null, sx = 0, sy = 0, fired = false;
+    node.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      fired = false; sx = e.clientX; sy = e.clientY;
+      timer = setTimeout(() => { fired = true; openCtx(sx, sy, tabId); }, 550);
+    });
+    const cancel = () => clearTimeout(timer);
+    node.addEventListener('pointerup', cancel);
+    node.addEventListener('pointercancel', cancel);
+    node.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+    node.addEventListener('click', (e) => { if (fired) { e.stopImmediatePropagation(); e.preventDefault(); fired = false; } }, true);
+  }
+  function openCtx(x, y, tabId) {
+    ctxTab = tabId;
+    const m = $('#ctxMenu'); m.style.display = 'block';
+    const r = m.getBoundingClientRect();
+    m.style.left = Math.min(x, innerWidth - r.width - 6) + 'px';
+    m.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+  }
+  function closeCtx() { $('#ctxMenu').style.display = 'none'; ctxTab = null; }
+  $('#ctxMenu').addEventListener('click', (e) => {
+    const act = e.target.dataset.act; const id = ctxTab; closeCtx();
+    if (act === 'rename') renameTab(id);
+    if (act === 'delete') deleteTab(id);
+  });
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctxMenu')) closeCtx(); });
+
+  // ======================= Drag & drop (mouse + touch) =======================
+  function attachDrag(handle, card, taskId) {
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const page = $('#page');
+      const rect = card.getBoundingClientRect();
+      const offY = e.clientY - rect.top, offX = e.clientX - rect.left;
+      const ph = el('div', { class: 'placeholder' }); ph.style.height = rect.height + 'px';
+      card.after(ph);
+      card.classList.add('dragging');
+      card.style.width = rect.width + 'px';
+      card.style.left = rect.left + 'px'; card.style.top = rect.top + 'px';
+      let overTab = null, scrollTimer = null, lastY = e.clientY;
+
+      handle.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        lastY = ev.clientY;
+        card.style.left = (ev.clientX - offX) + 'px';
+        card.style.top = (ev.clientY - offY) + 'px';
+        // over a sidebar tab?
+        const under = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.classList && n.classList.contains('tab') && n.dataset.tab);
+        document.querySelectorAll('.tab.drop-target').forEach(n => n.classList.remove('drop-target'));
+        overTab = under && under.dataset.tab !== current ? under.dataset.tab : null;
+        if (overTab) { under.classList.add('drop-target'); return; }
+        // reorder within page
+        const siblings = [...page.querySelectorAll('.task:not(.dragging)')];
+        let placed = false;
+        for (const s of siblings) {
+          const r = s.getBoundingClientRect();
+          if (ev.clientY < r.top + r.height / 2) { s.before(ph); placed = true; break; }
+        }
+        if (!placed && siblings.length) siblings[siblings.length - 1].after(ph);
+      };
+      // auto-scroll near edges
+      scrollTimer = setInterval(() => {
+        const r = page.getBoundingClientRect();
+        if (lastY < r.top + 40) page.scrollTop -= 12;
+        else if (lastY > r.bottom - 40) page.scrollTop += 12;
+      }, 30);
+      const up = () => {
+        clearInterval(scrollTimer);
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        document.querySelectorAll('.tab.drop-target').forEach(n => n.classList.remove('drop-target'));
+        if (overTab) { ph.remove(); moveTask(taskId, overTab); return; }
+        const order = [...page.children].filter(n => n.classList.contains('task') && !n.classList.contains('dragging') || n === ph);
+        const newIndex = order.indexOf(ph);
+        ph.remove();
+        reorderTask(taskId, Math.max(0, newIndex));
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  }
+
+  // ======================= Dialogs =======================
+  function nameBox(title, value) {
+    return new Promise((resolve) => {
+      const d = $('#nameDlg'); $('#nameDlgTitle').textContent = title;
+      const inp = $('#nameDlgInput'); inp.value = value;
+      const done = (v) => { d.close(); cleanup(); resolve(v); };
+      const ok = () => done(inp.value.trim() || null);
+      const cancel = () => done(null);
+      const key = (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } };
+      const cleanup = () => { $('#nameDlgOk').removeEventListener('click', ok); $('#nameDlgCancel').removeEventListener('click', cancel); inp.removeEventListener('keydown', key); d.removeEventListener('cancel', cancel); };
+      $('#nameDlgOk').addEventListener('click', ok); $('#nameDlgCancel').addEventListener('click', cancel);
+      inp.addEventListener('keydown', key); d.addEventListener('cancel', cancel);
+      d.showModal(); setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    });
+  }
+  // choices: array of [label, value, primary?]; returns value
+  function choiceBox(title, msg, choices) {
+    return new Promise((resolve) => {
+      const d = $('#confirmDlg'); $('#confirmTitle').textContent = title; $('#confirmMsg').textContent = msg;
+      const acts = $('#confirmActions'); acts.innerHTML = '';
+      const done = (v) => { d.close(); resolve(v); };
+      for (const [label, value, primary] of choices)
+        acts.append(el('button', { class: 'btn' + (primary ? ' primary' : ''), onclick: () => done(value) }, label));
+      d.oncancel = (e) => { e.preventDefault(); done(choices[0][1]); };
+      d.showModal();
+    });
+  }
+  const confirmBox = (title, msg, okLabel = 'OK') => choiceBox(title, msg, [['Cancel', false], [okLabel, true, true]]);
+
+  // ======================= Google Drive sync =======================
+  const Drive = (() => {
+    let clientId = lsGet(LS.clientId, '');
+    let st = lsGet(LS.drive, { connected: false, fileId: null, version: null });
+    let token = null, tokenExp = 0, tokenClient = null, gisLoaded = null;
+    let saveTimer = null, saving = false, saveAgain = false;
+
+    const persist = () => lsSet(LS.drive, st);
+    const badge = (text, cls = '') => { const b = $('#syncBadge'); b.textContent = text; b.className = cls; };
+    function refreshBadge() {
+      if (!st.connected) return badge('Local only', '');
+      if (!navigator.onLine) return badge('Offline', 'warn');
+      if (!token || Date.now() > tokenExp) return badge(dirty ? 'Tap to sync' : 'Drive', dirty ? 'warn' : 'ok');
+      badge(dirty ? 'Saving…' : 'Synced', dirty ? 'warn' : 'ok');
+    }
+
+    function loadGIS() {
+      if (gisLoaded) return gisLoaded;
+      gisLoaded = new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+        s.onload = res; s.onerror = () => { gisLoaded = null; rej(new Error('Could not load Google sign-in')); };
+        document.head.append(s);
+      });
+      return gisLoaded;
+    }
+    async function getToken(interactive) {
+      if (token && Date.now() < tokenExp - 60000) return token;
+      if (!clientId) throw new Error('No Client ID set');
+      await loadGIS();
+      return new Promise((resolve, reject) => {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId, scope: SCOPE,
+          callback: (r) => {
+            if (r.error) return reject(new Error(r.error));
+            token = r.access_token; tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
+            resolve(token);
+          },
+          error_callback: (e) => reject(new Error(e && e.type || 'auth_failed')),
+        });
+        tokenClient.requestAccessToken({ prompt: interactive && !st.connected ? 'consent' : '' });
+      });
+    }
+    async function api(path, opts = {}) {
+      const t = await getToken(false);
+      const r = await fetch(path, { ...opts, headers: { Authorization: 'Bearer ' + t, ...(opts.headers || {}) } });
+      if (r.status === 401) { token = null; throw new Error('auth_expired'); }
+      if (!r.ok) throw new Error('Drive error ' + r.status);
+      return r;
+    }
+    const meta = async (id) => (await api(`https://www.googleapis.com/drive/v3/files/${id}?fields=id,version,modifiedTime,trashed`)).json();
+    const download = async (id) => (await api(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json();
+
+    async function findFile() {
+      const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+      const r = await (await api(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,version,modifiedTime)&orderBy=modifiedTime desc`)).json();
+      return r.files && r.files[0];
+    }
+    async function createFile() {
+      const boundary = 'sto' + uid();
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+        JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: 'application/json' }) +
+        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` + JSON.stringify(data) + `\r\n--${boundary}--`;
+      return (await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,version', {
+        method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
+      })).json();
+    }
+    async function upload() {
+      return (await api(`https://www.googleapis.com/upload/drive/v3/files/${st.fileId}?uploadType=media&fields=id,version`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+      })).json();
+    }
+    function adoptRemote(remote, version) {
+      data = normalize(remote);
+      if (!tabById(current)) current = FOCUS_ID;
+      lsSet(LS.data, data);
+      dirty = false; lsSet('sto.dirty', false);
+      st.version = version; persist(); render();
+    }
+
+    async function connect() {
+      clientId = $('#clientIdInput').value.trim(); lsSet(LS.clientId, clientId);
+      if (!clientId) { toast('Paste your Client ID first'); return; }
+      badge('Connecting…', 'warn');
+      try {
+        await getToken(true);
+        const f = await findFile();
+        if (!f) {
+          const c = await createFile();
+          st = { connected: true, fileId: c.id, version: c.version }; persist();
+          dirty = false; lsSet('sto.dirty', false);
+          toast('Created TaskOrganizer.json in your Drive');
+        } else {
+          const remote = await download(f.id);
+          st = { connected: true, fileId: f.id, version: f.version }; persist();
+          const hasLocal = Object.values(data.tasks).some(l => l.length);
+          if (hasLocal && dirty) {
+            const keep = await choiceBox('Two versions found',
+              'Your Drive already has tasks, and this device has unsynced changes. Which should be kept?',
+              [['Use Drive', 'drive'], ['Keep this device', 'local', true]]);
+            if (keep === 'local') { await upload().then(r => { st.version = r.version; persist(); }); dirty = false; lsSet('sto.dirty', false); }
+            else adoptRemote(remote, f.version);
+          } else adoptRemote(remote, f.version);
+          toast('Connected to Google Drive');
+        }
+      } catch (e) { console.error(e); toast('Could not connect: ' + e.message, 4000); }
+      refreshBadge(); updateSettingsText();
+    }
+    function disconnect() {
+      try { if (token && window.google) google.accounts.oauth2.revoke(token, () => {}); } catch {}
+      token = null; st = { connected: false, fileId: null, version: null }; persist();
+      refreshBadge(); updateSettingsText(); toast('Disconnected. Tasks stay on this device.');
+    }
+
+    function scheduleSave() {
+      refreshBadge();
+      if (!st.connected) return;
+      clearTimeout(saveTimer); saveTimer = setTimeout(save, 1200);
+    }
+    async function save(interactive = false) {
+      if (!st.connected || !dirty) { refreshBadge(); return; }
+      if (saving) { saveAgain = true; return; }
+      if (!navigator.onLine) { refreshBadge(); return; }
+      if (!interactive && (!token || Date.now() > tokenExp - 60000)) { refreshBadge(); return; }
+      saving = true;
+      try {
+        if (interactive) await getToken(true);
+        const m = await meta(st.fileId);
+        if (m.trashed) throw new Error('Drive file was deleted');
+        if (st.version && m.version !== st.version) {
+          const choice = await choiceBox('Changed on another device',
+            'The Drive copy was updated somewhere else since this device loaded it. Which version do you want?',
+            [['Load Drive version', 'drive'], ['Overwrite with this device', 'local', true]]);
+          if (choice === 'drive') { adoptRemote(await download(st.fileId), m.version); return; }
+        }
+        const r = await upload();
+        st.version = r.version; persist();
+        dirty = false; lsSet('sto.dirty', false);
+      } catch (e) {
+        console.error(e);
+        if (e.message !== 'auth_expired') toast('Sync failed: ' + e.message, 3500);
+      } finally {
+        saving = false; refreshBadge();
+        if (saveAgain) { saveAgain = false; scheduleSave(); }
+      }
+    }
+    // When the app comes back to the foreground, pull newer data from Drive.
+    async function pull() {
+      if (!st.connected || dirty || !navigator.onLine || !token || Date.now() > tokenExp - 60000) return;
+      try {
+        const m = await meta(st.fileId);
+        if (m.version !== st.version) { adoptRemote(await download(st.fileId), m.version); toast('Updated from Drive'); }
+      } catch (e) { console.error(e); }
+    }
+    async function badgeClick() {
+      if (!st.connected) return openSettings();
+      try {
+        await getToken(true);
+        if (dirty) await save(true); else { await pull(); toast('Up to date'); }
+      } catch (e) { toast('Sign-in needed: ' + e.message, 3500); }
+      refreshBadge();
+    }
+    function updateSettingsText() {
+      $('#clientIdInput').value = clientId || '';
+      $('#driveStatusText').textContent = st.connected ? 'Status: connected. Saving to TaskOrganizer.json.' : 'Status: not connected. Tasks are saved on this device only.';
+      $('#disconnectBtn').style.display = st.connected ? '' : 'none';
+      $('#connectBtn').textContent = st.connected ? 'Reconnect' : 'Connect Drive';
+    }
+    // On start: browsers block sign-in popups that aren't triggered by a tap,
+    // so the badge shows "Tap to sync" until the user taps it once per session.
+    async function init() {
+      if (st.connected && clientId) loadGIS().catch(() => {});
+      refreshBadge();
+    }
+    return { connect, disconnect, scheduleSave, save, pull, badgeClick, init, refreshBadge, updateSettingsText };
+  })();
+
+  function openSettings() { Drive.updateSettingsText(); $('#settingsDlg').showModal(); }
+  function exportBackup() {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: 'TaskOrganizer-backup-' + new Date().toISOString().slice(0, 10) + '.json' });
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  // ======================= Wiring =======================
+  $('#addTaskBtn').addEventListener('click', addTask);
+  $('#collapseAllBtn').addEventListener('click', toggleCollapseAll);
+  $('#cleanupBtn').addEventListener('click', cleanUp);
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#syncBadge').addEventListener('click', Drive.badgeClick);
+  $('#settingsClose').addEventListener('click', () => $('#settingsDlg').close());
+  $('#connectBtn').addEventListener('click', () => { $('#settingsDlg').close(); Drive.connect(); });
+  $('#disconnectBtn').addEventListener('click', () => { $('#settingsDlg').close(); Drive.disconnect(); });
+  $('#exportBtn').addEventListener('click', exportBackup);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') Drive.pull();
+    else Drive.save();
+  });
+  window.addEventListener('online', () => { Drive.refreshBadge(); Drive.save(); });
+  window.addEventListener('offline', Drive.refreshBadge);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  render();
+  Drive.init();
+})();
+</script>
+</body>
+</html>
