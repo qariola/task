@@ -309,7 +309,8 @@
   function defaultData() {
     return {
       schema: 1,
-      updated: new Date().toISOString(),
+      updated: '1970-01-01T00:00:00.000Z', // a brand-new device never counts as "newer"
+
       tabs: [
         { id: FOCUS_ID, name: 'Focus', fixed: true },
         { id: uid(), name: 'Tab 2' },
@@ -332,6 +333,7 @@
   let dirty = lsGet('sto.dirty', false);
 
   function commit({ rerender = true, sync = true } = {}) {
+    trackChanges();
     data.updated = new Date().toISOString();
     lsSet(LS.data, data);
     if (sync) { dirty = true; lsSet('sto.dirty', true); Drive.scheduleSave(); }
@@ -345,6 +347,69 @@
       if (i >= 0) return { tabId, index: i, task: data.tasks[tabId][i] };
     }
     return null;
+  }
+
+  // ======================= Change tracking & merge =======================
+  // Every task and tab carries `mod` (when it last changed). Deleted ones leave a
+  // marker in data.deleted / data.deletedTabs so they don't come back on merge.
+  let sigs = new Map(), tabSigs = new Map();
+  const taskSig = (tabId, t) => JSON.stringify([tabId, t.text, t.steps, !!t.done, !!t.collapsed, t.origin || '']);
+  function resetSigs() {
+    sigs = new Map(); tabSigs = new Map();
+    for (const tab of data.tabs) {
+      tabSigs.set(tab.id, tab.name);
+      for (const t of tasksOf(tab.id)) sigs.set(t.id, taskSig(tab.id, t));
+    }
+  }
+  function trackChanges() {
+    const now = Date.now(), seen = new Set(), seenTabs = new Set();
+    data.deleted = data.deleted || {}; data.deletedTabs = data.deletedTabs || {};
+    for (const tab of data.tabs) {
+      seenTabs.add(tab.id);
+      if (tabSigs.get(tab.id) !== tab.name) { tab.mod = now; tabSigs.set(tab.id, tab.name); }
+      for (const t of tasksOf(tab.id)) {
+        seen.add(t.id);
+        const sg = taskSig(tab.id, t);
+        if (sigs.get(t.id) !== sg) { t.mod = now; sigs.set(t.id, sg); }
+      }
+    }
+    for (const id of [...sigs.keys()]) if (!seen.has(id)) { data.deleted[id] = now; sigs.delete(id); }
+    for (const id of [...tabSigs.keys()]) if (!seenTabs.has(id)) { data.deletedTabs[id] = now; tabSigs.delete(id); }
+  }
+  function mergeData(a, b) {
+    a = normalize(JSON.parse(JSON.stringify(a))); b = normalize(JSON.parse(JSON.stringify(b)));
+    const newer = (a.updated || '') >= (b.updated || '') ? a : b, older = newer === a ? b : a;
+    const maxMap = (x = {}, y = {}) => { const r = { ...x }; for (const [k, v] of Object.entries(y)) r[k] = Math.max(r[k] || 0, v); return r; };
+    const cutoff = Date.now() - 90 * 864e5, prune = (m) => { for (const k of Object.keys(m)) if (m[k] < cutoff) delete m[k]; return m; };
+    const deleted = prune(maxMap(a.deleted, b.deleted)), deletedTabs = prune(maxMap(a.deletedTabs, b.deletedTabs));
+
+    // Tabs: newest name wins; deleted tabs stay deleted unless renamed after deletion.
+    const tabMap = new Map();
+    for (const t of [...older.tabs, ...newer.tabs]) {
+      const cur = tabMap.get(t.id);
+      if (!cur || (t.mod || 0) >= (cur.mod || 0)) tabMap.set(t.id, t);
+    }
+    const tabOrder = [...newer.tabs.map(t => t.id), ...older.tabs.map(t => t.id).filter(id => !newer.tabs.some(t => t.id === id))];
+    const tabs = tabOrder.map(id => tabMap.get(id))
+      .filter(t => t.id === FOCUS_ID || !(deletedTabs[t.id] && deletedTabs[t.id] >= (t.mod || 0)));
+
+    // Tasks: per task, the most recently changed copy wins (including which tab it's in).
+    const flat = (d) => { const m = new Map(); for (const [tabId, list] of Object.entries(d.tasks)) list.forEach((t, i) => m.set(t.id, { t, tabId, i })); return m; };
+    const fa = flat(newer), fb = flat(older), win = new Map();
+    for (const id of new Set([...fa.keys(), ...fb.keys()])) {
+      const x = fa.get(id), y = fb.get(id);
+      const w = !y ? x : !x ? y : ((y.t.mod || 0) > (x.t.mod || 0) ? y : x);
+      if (deleted[id] && deleted[id] >= (w.t.mod || 0)) continue;
+      if (!tabs.some(t => t.id === w.tabId)) continue;
+      win.set(id, w);
+    }
+    const tasks = {};
+    for (const tab of tabs) {
+      const list = (newer.tasks[tab.id] || []).filter(t => win.get(t.id)?.tabId === tab.id).map(t => t.id);
+      for (const [id, w] of win) if (w.tabId === tab.id && !list.includes(id)) list.splice(Math.min(w.i, list.length), 0, id);
+      tasks[tab.id] = list.map(id => win.get(id).t);
+    }
+    return { schema: 1, updated: newer.updated > older.updated ? newer.updated : older.updated, tabs, tasks, deleted, deletedTabs };
   }
 
   // ======================= Rendering =======================
@@ -747,12 +812,32 @@
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
       })).json();
     }
-    function adoptRemote(remote, version) {
-      data = normalize(remote);
+    function applyData(newData) {
+      const ae = document.activeElement, card = ae && ae.closest && ae.closest('.task');
+      const focusInfo = card ? { id: card.dataset.id, step: ae.classList.contains('step-text') ? [...card.querySelectorAll('input.step-text')].indexOf(ae) : -1, pos: ae.selectionStart } : null;
+      data = normalize(newData);
       if (!tabById(current)) current = FOCUS_ID;
-      lsSet(LS.data, data);
+      lsSet(LS.data, data); resetSigs(); render();
+      if (focusInfo) {
+        const c = document.querySelector(`.task[data-id="${focusInfo.id}"]`);
+        const target = c && (focusInfo.step >= 0 ? c.querySelectorAll('input.step-text')[focusInfo.step] : c.querySelector('textarea'));
+        if (target) { target.focus(); try { target.setSelectionRange(focusInfo.pos, focusInfo.pos); } catch {} }
+      }
+    }
+    const sameContent = (x, y) => JSON.stringify({ ...x, updated: 0 }) === JSON.stringify({ ...y, updated: 0 });
+    // Merge Drive's copy with this device's copy; upload if the result differs from Drive.
+    async function syncWith(remote, remoteVersion) {
+      const merged = mergeData(data, remote);
+      const changedHere = !sameContent(merged, data);
+      if (changedHere) applyData(merged);
+      if (sameContent(merged, normalize(remote))) {
+        st.version = remoteVersion;
+      } else {
+        const r = await upload(); st.version = r.version; st.lastSaved = new Date().toISOString();
+      }
+      st.lastError = null; persist();
       dirty = false; lsSet('sto.dirty', false);
-      st.version = version; persist(); render();
+      return changedHere;
     }
 
     async function connect() {
@@ -772,16 +857,33 @@
           dirty = false; lsSet('sto.dirty', false);
           toast('Created TaskOrganizer.json in your Drive');
         } else {
-          const remote = await download(f.id);
-          st = { connected: true, fileId: f.id, version: f.version }; persist();
-          const hasLocal = Object.values(data.tasks).some(l => l.length);
-          if (hasLocal && dirty) {
-            const keep = await choiceBox('Two versions found',
-              'Your Drive already has tasks, and this device has unsynced changes. Which should be kept?',
-              [['Use Drive', 'drive'], ['Keep this device', 'local', true]]);
-            if (keep === 'local') { await upload().then(r => { st.version = r.version; persist(); }); dirty = false; lsSet('sto.dirty', false); }
-            else adoptRemote(remote, f.version);
-          } else adoptRemote(remote, f.version);
+          const remote = normalize(await download(f.id));
+          const wasConnected = st.connected && st.fileId === f.id;
+          st = { ...st, connected: true, fileId: f.id, version: f.version }; persist();
+          const remoteIds = new Set(Object.values(remote.tasks).flat().map(t => t.id));
+          const onlyHere = Object.values(data.tasks).flat().filter(t => !remoteIds.has(t.id)).length;
+          if (!wasConnected && onlyHere) {
+            const keep = await choiceBox('Tasks on this device',
+              `This device has ${onlyHere} task${onlyHere > 1 ? 's that aren\'t' : ' that isn\'t'} in your Drive yet (probably test tasks). Add ${onlyHere > 1 ? 'them' : 'it'} to Drive, or discard ${onlyHere > 1 ? 'them' : 'it'}?`,
+              [['Discard them', false], ['Add to Drive', true, true]]);
+            if (!keep) { applyData(remote); st.version = f.version; persist(); dirty = false; lsSet('sto.dirty', false); }
+            else {
+              // Put this device's tasks into Drive's tabs (matched by name), then combine.
+              const local = JSON.parse(JSON.stringify(data)), byName = new Map(remote.tabs.map(t => [t.name.toLowerCase(), t.id]));
+              for (const tab of [...local.tabs]) {
+                if (remote.tabs.some(t => t.id === tab.id)) continue;
+                const target = tab.id === FOCUS_ID ? FOCUS_ID : byName.get(tab.name.toLowerCase());
+                if (!target) continue;
+                remote.tasks[target] = remote.tasks[target] || [];
+                local.tasks[target] = [...(local.tasks[tab.id] || []).map(t => ({ ...t, mod: Date.now() })), ...(local.tasks[target] || [])];
+                if (target !== tab.id) { delete local.tasks[tab.id]; local.tabs = local.tabs.filter(t => t.id !== tab.id); }
+              }
+              local.updated = '1970-01-01T00:00:00.000Z'; // keep Drive's tab order
+              data = normalize(local); resetSigs();
+              await syncWith(remote, f.version);
+            }
+          } else if (!wasConnected) { applyData(remote); st.version = f.version; persist(); dirty = false; lsSet('sto.dirty', false); }
+          else await syncWith(remote, f.version);
           toast('Connected to Google Drive');
         }
       } catch (e) { console.error(e); st.lastError = new Date().toLocaleString() + ' — connect: ' + e.message; persist(); toast('Could not connect: ' + e.message, 4000); }
@@ -809,10 +911,9 @@
         const m = await meta(st.fileId);
         if (m.trashed) throw new Error('Drive file was deleted');
         if (st.version && m.version !== st.version) {
-          const choice = await choiceBox('Changed on another device',
-            'The Drive copy was updated somewhere else since this device loaded it. Which version do you want?',
-            [['Load Drive version', 'drive'], ['Overwrite with this device', 'local', true]]);
-          if (choice === 'drive') { adoptRemote(await download(st.fileId), m.version); return; }
+          // Drive changed on the other device: combine both copies task by task.
+          await syncWith(await download(st.fileId), m.version);
+          return;
         }
         const r = await upload();
         st.version = r.version; st.lastSaved = new Date().toISOString(); st.lastError = null; persist();
@@ -828,10 +929,14 @@
     }
     // When the app comes back to the foreground, pull newer data from Drive.
     async function pull() {
-      if (!st.connected || dirty || !navigator.onLine || !token || Date.now() > tokenExp - 60000) return;
+      if (!st.connected || saving || !navigator.onLine || !token || Date.now() > tokenExp - 60000) return;
       try {
         const m = await meta(st.fileId);
-        if (m.version !== st.version) { adoptRemote(await download(st.fileId), m.version); toast('Updated from Drive'); }
+        if (m.version !== st.version) {
+          saving = true;
+          try { if (await syncWith(await download(st.fileId), m.version)) toast('Updated from Drive'); }
+          finally { saving = false; refreshBadge(); }
+        } else if (dirty) await save();
       } catch (e) { console.error(e); }
     }
     async function badgeClick() {
@@ -890,12 +995,15 @@
     else Drive.save();
   });
   window.addEventListener('online', () => { Drive.refreshBadge(); Drive.save(); });
+  // While the app is open, check Drive for changes from the other device once a minute.
+  setInterval(() => { if (document.visibilityState === 'visible') Drive.pull(); }, 60000);
   window.addEventListener('offline', Drive.refreshBadge);
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
+  resetSigs();
   render();
   Drive.init();
 })();

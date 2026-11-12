@@ -1,5 +1,5 @@
 // Keeps the app shell available offline. Always tries the network first so updates show up.
-const CACHE = 'task-organizer-v3';
+const CACHE = 'task-organizer-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

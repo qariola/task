@@ -55,7 +55,7 @@ Only the app's code is public. Your tasks are stored in your Drive, not on GitHu
   - *Tap to sync* (and a yellow bar across the top): Google's sign-in lasts about an hour. When it runs out, tap the bar: the app goes to Google's page and comes straight back.
   - *Offline*: changes are kept on the device and upload when you reconnect.
 - Every change saves to Drive about a second after you stop typing.
-- When you switch devices, the app pulls the latest copy from Drive. If both devices changed it, the app asks which version to keep.
+- When you switch devices, the app pulls the latest copy from Drive, and it checks for changes once a minute while open. If both devices changed things, it combines them task by task automatically: the most recent edit to each task wins, and deleted tasks stay deleted.
 - **⚙** shows the last time the app saved to Drive and the last error, if there was one.
 - **⚙ → Export backup** downloads a copy of all your tasks.
 
