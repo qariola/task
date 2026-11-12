@@ -102,6 +102,11 @@
   #syncBadge.warn { color: #f5c542; border-color: #f5c542; }
   #syncBadge.err { color: var(--danger); border-color: var(--danger); }
 
+  #syncBanner {
+    display: none; width: 100%; padding: 10px 12px; text-align: center; font-size: 13px; text-transform: uppercase;
+    background: #f5c542; color: #000; letter-spacing: 0.05em;
+  }
+  #syncBanner.show { display: block; }
   #page { flex: 1; overflow-y: auto; padding: 14px 14px 80px 14px; }
   .empty { opacity: 0.55; text-align: center; margin-top: 60px; text-transform: uppercase; font-size: 14px; line-height: 1.8; }
 
@@ -220,6 +225,7 @@
       <button id="syncBadge" title="Google Drive sync">Local</button>
       <button class="icon-btn" id="settingsBtn" title="Settings" style="font-size:18px">⚙</button>
     </header>
+    <button id="syncBanner">⚠ Not synced to Google Drive. Tap here to sync.</button>
     <div id="page"></div>
   </section>
 </div>
@@ -643,11 +649,19 @@
     let clientId = lsGet(LS.clientId, '');
     let st = lsGet(LS.drive, { connected: false, fileId: null, version: null });
     let token = null, tokenExp = 0, tokenClient = null, gisLoaded = null;
-    let saveTimer = null, saving = false, saveAgain = false;
+    let saveTimer = null, saving = false, saveAgain = false, needConsent = false;
+    function showScopeHelp() {
+      needConsent = true;
+      choiceBox('One more step',
+        'Google signed you in, but the Drive permission was not granted. Tap Connect Drive again, and on the Google screen TICK THE CHECKBOX next to "See, edit, create and delete only the specific Google Drive files you use with this app", then Continue.',
+        [['OK', true, true]]);
+    }
 
     const persist = () => lsSet(LS.drive, st);
     const badge = (text, cls = '') => { const b = $('#syncBadge'); b.textContent = text; b.className = cls; };
     function refreshBadge() {
+      const needTap = st.connected && navigator.onLine && (!token || Date.now() > tokenExp - 60000);
+      $('#syncBanner').classList.toggle('show', needTap);
       if (!st.connected) return badge('Local only', '');
       if (!navigator.onLine) return badge('Offline', 'warn');
       if (!token || Date.now() > tokenExp) return badge(dirty ? 'Tap to sync' : 'Drive', dirty ? 'warn' : 'ok');
@@ -673,18 +687,29 @@
           client_id: clientId, scope: SCOPE,
           callback: (r) => {
             if (r.error) return reject(new Error(r.error));
+            if (google.accounts.oauth2.hasGrantedAllScopes && !google.accounts.oauth2.hasGrantedAllScopes(r, SCOPE)) {
+              token = null;
+              showScopeHelp();
+              return reject(new Error('Drive permission box was not ticked'));
+            }
             token = r.access_token; tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
             resolve(token);
           },
           error_callback: (e) => reject(new Error(e && e.type || 'auth_failed')),
         });
-        tokenClient.requestAccessToken({ prompt: interactive && !st.connected ? 'consent' : '' });
+        tokenClient.requestAccessToken({ prompt: interactive && (!st.connected || needConsent) ? 'consent' : '' });
+        needConsent = false;
       });
     }
     async function api(path, opts = {}) {
       const t = await getToken(false);
       const r = await fetch(path, { ...opts, headers: { Authorization: 'Bearer ' + t, ...(opts.headers || {}) } });
       if (r.status === 401) { token = null; throw new Error('auth_expired'); }
+      if (r.status === 403) {
+        const t = await r.text();
+        if (/insufficient|scope|permission/i.test(t)) { token = null; showScopeHelp(); throw new Error('Drive permission not granted'); }
+        throw new Error('Drive error 403: ' + t.slice(0, 120));
+      }
       if (!r.ok) throw new Error('Drive error ' + r.status);
       return r;
     }
@@ -727,7 +752,7 @@
         const f = await findFile();
         if (!f) {
           const c = await createFile();
-          st = { connected: true, fileId: c.id, version: c.version }; persist();
+          st = { connected: true, fileId: c.id, version: c.version, lastSaved: new Date().toISOString() }; persist();
           dirty = false; lsSet('sto.dirty', false);
           toast('Created TaskOrganizer.json in your Drive');
         } else {
@@ -743,7 +768,7 @@
           } else adoptRemote(remote, f.version);
           toast('Connected to Google Drive');
         }
-      } catch (e) { console.error(e); toast('Could not connect: ' + e.message, 4000); }
+      } catch (e) { console.error(e); st.lastError = new Date().toLocaleString() + ' — connect: ' + e.message; persist(); toast('Could not connect: ' + e.message, 4000); }
       refreshBadge(); updateSettingsText();
     }
     function disconnect() {
@@ -774,10 +799,11 @@
           if (choice === 'drive') { adoptRemote(await download(st.fileId), m.version); return; }
         }
         const r = await upload();
-        st.version = r.version; persist();
+        st.version = r.version; st.lastSaved = new Date().toISOString(); st.lastError = null; persist();
         dirty = false; lsSet('sto.dirty', false);
       } catch (e) {
         console.error(e);
+        st.lastError = new Date().toLocaleString() + ' — ' + e.message; persist();
         if (e.message !== 'auth_expired') toast('Sync failed: ' + e.message, 3500);
       } finally {
         saving = false; refreshBadge();
@@ -802,7 +828,13 @@
     }
     function updateSettingsText() {
       $('#clientIdInput').value = clientId || '';
-      $('#driveStatusText').textContent = st.connected ? 'Status: connected. Saving to TaskOrganizer.json.' : 'Status: not connected. Tasks are saved on this device only.';
+      const signedIn = token && Date.now() < tokenExp - 60000;
+      $('#driveStatusText').innerText = st.connected
+        ? `Status: connected${signedIn ? ' and signed in' : ' (tap the yellow bar to sign in)'}.\n` +
+          `Last saved to Drive: ${st.lastSaved ? new Date(st.lastSaved).toLocaleString() : 'never'}\n` +
+          `Unsaved changes on this device: ${dirty ? 'yes' : 'no'}` +
+          (st.lastError ? `\nLast error: ${st.lastError}` : '')
+        : 'Status: not connected. Tasks are saved on this device only.' + (st.lastError ? `\nLast error: ${st.lastError}` : '');
       $('#disconnectBtn').style.display = st.connected ? '' : 'none';
       $('#connectBtn').textContent = st.connected ? 'Reconnect' : 'Connect Drive';
     }
@@ -828,6 +860,7 @@
   $('#cleanupBtn').addEventListener('click', cleanUp);
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#syncBadge').addEventListener('click', Drive.badgeClick);
+  $('#syncBanner').addEventListener('click', Drive.badgeClick);
   $('#settingsClose').addEventListener('click', () => $('#settingsDlg').close());
   $('#connectBtn').addEventListener('click', () => { $('#settingsDlg').close(); Drive.connect(); });
   $('#disconnectBtn').addEventListener('click', () => { $('#settingsDlg').close(); Drive.disconnect(); });

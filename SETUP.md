@@ -9,11 +9,11 @@ To try it first, double-click `index.html` on your PC. It runs in "Local only" m
 ## Part 1: Put the app online (GitHub Pages, free, about 5 min)
 
 1. Sign in at github.com. Create a free account if you don't have one.
-2. Click **+ → New repository**. Name it `tasks`, set it to **Public**, and click **Create repository**.
+2. Click **+ → New repository**. Name it `task`, set it to **Public**, and click **Create repository**.
 3. Click **uploading an existing file** and drag in all six files:
    `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `SETUP.md`. Click **Commit changes**.
 4. Go to **Settings → Pages**. Under *Branch*, pick **main** and **/ (root)**, then click **Save**.
-5. After about a minute, the page shows your address: `https://YOUR-USERNAME.github.io/tasks/`
+5. After about a minute, the page shows your address: `https://qariola.github.io/task/`
 
 Only the app's code is public. Your tasks are stored in your Drive, not on GitHub.
 
@@ -29,16 +29,17 @@ Only the app's code is public. Your tasks are stored in your Drive, not on GitHu
    - You can leave it in **Testing** mode. Only you will use it.
 5. **Client ID:** go to *APIs & Services → Credentials → + Create credentials → OAuth client ID*.
    - Application type: **Web application**
-   - **Authorized JavaScript origins**: add `https://YOUR-USERNAME.github.io` (no `/tasks`, no trailing slash)
+   - **Authorized JavaScript origins**: add `https://qariola.github.io` (no `/task`, no trailing slash)
    - Click **Create**, then copy the **Client ID**. It ends in `.apps.googleusercontent.com`.
 
 ## Part 3: Connect
 
-1. Open `https://YOUR-USERNAME.github.io/tasks/` on your PC.
+1. Open `https://qariola.github.io/task/` on your PC.
 2. Tap **⚙**, paste the Client ID, and tap **Connect Drive**.
-3. Google warns you that the app isn't verified. That's expected for a personal app. Click **Continue** and allow access.
+3. On Google's permission screen, **tick the checkbox** next to "See, edit, create and delete only the specific Google Drive files you use with this app". If you leave it unticked, nothing will save.
+4. Google warns you that the app isn't verified. That's expected for a personal app. Click **Continue** and allow access.
    The app can only see files it creates. It cannot read the rest of your Drive.
-4. Do the same on your phone. Paste the same Client ID and connect. It loads the tasks from Drive.
+5. Do the same on your phone. Paste the same Client ID and connect. It loads the tasks from Drive.
 
 **Add it to your phone's home screen** so it works like an app:
 - iPhone (Safari): Share → **Add to Home Screen**
@@ -50,10 +51,11 @@ Only the app's code is public. Your tasks are stored in your Drive, not on GitHu
 
 - **Sync badge** (top right):
   - *Synced*: Drive matches what's on screen.
-  - *Tap to sync*: tap it once each time you open the app. Google needs a tap to sign in.
+  - *Tap to sync* (and a yellow bar across the top): tap it once each time you open the app. Google needs a tap to sign in.
   - *Offline*: changes are kept on the device and upload when you reconnect.
 - Every change saves to Drive about a second after you stop typing.
 - When you switch devices, the app pulls the latest copy from Drive. If both devices changed it, the app asks which version to keep.
+- **⚙** shows the last time the app saved to Drive and the last error, if there was one.
 - **⚙ → Export backup** downloads a copy of all your tasks.
 
 ## How it works (matches your outline)
